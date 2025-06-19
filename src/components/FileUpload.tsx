@@ -17,7 +17,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, isProce
     e.stopPropagation();
     
     const files = Array.from(e.dataTransfer.files).filter(file => 
-      file.name.endsWith('.mcaddon') || file.name.endsWith('.mcpack')
+      file.name.endsWith('.mcaddon') || file.name.endsWith('.mcpack') || file.name.endsWith('.zip')
     );
     
     if (files.length > 0) {
@@ -64,7 +64,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, isProce
                 <input
                   type="file"
                   multiple
-                  accept=".mcaddon,.mcpack"
+                  accept=".mcaddon,.mcpack,.zip"
                   onChange={handleFileInput}
                   className="hidden"
                   disabled={isProcessing}

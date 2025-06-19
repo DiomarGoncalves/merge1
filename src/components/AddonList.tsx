@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, Trash2, FileText } from 'lucide-react';
+import { Trash2, FileText } from 'lucide-react';
 import { LoadedAddon } from '../types/addon';
 
 interface AddonListProps {
@@ -38,10 +38,14 @@ export const AddonList: React.FC<AddonListProps> = ({ addons, onRemoveAddon }) =
     return (
       <div className="text-center py-8 text-gray-500">
         <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
-        <p>No addons loaded yet. Upload some .mcaddon or .mcpack files to get started.</p>
+        <p>No addons loaded yet. Upload some .zip or .mcpack files to get started.</p>
       </div>
     );
   }
+
+  // Caminhos das logos padrão
+  const resourceLogo = "/rplogo.png";
+  const behaviorLogo = "/bhlogo.png";
 
   return (
     <div className="space-y-3">
@@ -57,7 +61,13 @@ export const AddonList: React.FC<AddonListProps> = ({ addons, onRemoveAddon }) =
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center space-x-3 mb-2">
-                <Package className="w-5 h-5 text-gray-600" />
+                {/* Logo padrão para todos os addons */}
+                <img
+                  src={addon.type === 'resource' ? resourceLogo : behaviorLogo}
+                  alt="Addon Logo"
+                  className="w-8 h-8 rounded"
+                  style={{ background: "#f3f4f6" }}
+                />
                 <h4 className="font-semibold text-gray-900">{addon.name}</h4>
                 <span className={`px-2 py-1 text-xs font-medium rounded-full border ${getAddonTypeColor(addon.type)}`}>
                   {getAddonTypeLabel(addon.type)}

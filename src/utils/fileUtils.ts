@@ -11,26 +11,43 @@ export const isTextFile = (filename: string): boolean => {
 export const parseAddonFromFile = async (file: File): Promise<LoadedAddon> => {
   const zip = new JSZip();
   const zipContent = await zip.loadAsync(file);
-  
+
   const files: AddonFile[] = [];
   let manifest: AddonManifest | null = null;
   let addonType: 'behavior' | 'resource' | 'mixed' = 'mixed';
-  
+
+  // Detecta se todos os arquivos estão dentro de uma subpasta comum
+  const allPaths = Object.keys(zipContent.files).filter(p => !zipContent.files[p].dir);
+  let commonPrefix = '';
+  if (allPaths.length > 0) {
+    const splitPaths = allPaths.map(p => p.split('/').filter(Boolean));
+    if (splitPaths.every(parts => parts.length > 1 && parts[0] === splitPaths[0][0])) {
+      // Todos os arquivos estão dentro da mesma subpasta
+      commonPrefix = splitPaths[0][0] + '/';
+    }
+  }
+
   // Process all files in the addon
   for (const [relativePath, zipEntry] of Object.entries(zipContent.files)) {
     if (zipEntry.dir) continue;
-    
-    const isText = isTextFile(relativePath);
+
+    // Remove prefixo comum se existir
+    let normalizedPath = relativePath;
+    if (commonPrefix && normalizedPath.startsWith(commonPrefix)) {
+      normalizedPath = normalizedPath.slice(commonPrefix.length);
+    }
+
+    const isText = isTextFile(normalizedPath);
     const content = await zipEntry.async(isText ? 'text' : 'uint8array');
-    
+
     files.push({
-      path: relativePath,
+      path: normalizedPath,
       content,
       isText
     });
-    
+
     // Parse manifest.json
-    if (relativePath.endsWith('manifest.json')) {
+    if (normalizedPath.endsWith('manifest.json')) {
       try {
         manifest = JSON.parse(content as string);
       } catch (error) {
@@ -38,7 +55,7 @@ export const parseAddonFromFile = async (file: File): Promise<LoadedAddon> => {
       }
     }
   }
-  
+
   // Determine addon type
   const hasBehaviorFiles = files.some(f => 
     f.path.includes('functions/') || 
@@ -62,7 +79,7 @@ export const parseAddonFromFile = async (file: File): Promise<LoadedAddon> => {
   
   return {
     id: uuidv4(),
-    name: manifest?.header?.name || file.name.replace(/\.(mcaddon|mcpack)$/, ''),
+    name: manifest?.header?.name || file.name.replace(/\.(mcaddon|mcpack|zip)$/, ''),
     type: addonType,
     files,
     manifest,

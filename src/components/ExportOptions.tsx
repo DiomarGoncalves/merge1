@@ -10,7 +10,7 @@ interface ExportOptionsProps {
 }
 
 export const ExportOptions: React.FC<ExportOptionsProps> = ({ mergeResult, isExporting, onExport }) => {
-  const [exportFormat, setExportFormat] = useState<'mcaddon' | 'mcpack' | 'folder'>('mcaddon');
+  const [exportFormat, setExportFormat] = useState<'mcaddon' | 'mcpack' | 'zip' | 'folder'>('mcaddon');
 
   const handleExport = async () => {
     if (!mergeResult) return;
@@ -35,7 +35,10 @@ export const ExportOptions: React.FC<ExportOptionsProps> = ({ mergeResult, isExp
       } else {
         // Create ZIP file
         const zipBlob = await createZipFromFiles(mergeResult.files);
-        const extension = exportFormat === 'mcaddon' ? '.mcaddon' : '.mcpack';
+        let extension = '';
+        if (exportFormat === 'mcaddon') extension = '.mcaddon';
+        else if (exportFormat === 'mcpack') extension = '.mcpack';
+        else if (exportFormat === 'zip') extension = '.zip';
         downloadFile(zipBlob, `${addonName}${extension}`);
       }
     } catch (error) {
@@ -91,6 +94,20 @@ export const ExportOptions: React.FC<ExportOptionsProps> = ({ mergeResult, isExp
               />
               <span className="text-sm">
                 <strong>.mcpack</strong> - Resource/Behavior pack
+              </span>
+            </label>
+
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                name="exportFormat"
+                value="zip"
+                checked={exportFormat === 'zip'}
+                onChange={(e) => setExportFormat(e.target.value as any)}
+                className="text-blue-600"
+              />
+              <span className="text-sm">
+                <strong>.zip</strong> - Standard zip archive
               </span>
             </label>
             
