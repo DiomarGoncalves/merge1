@@ -99,6 +99,28 @@ function mergeUiJsonFiles(files: AddonFile[]): any {
     .reduce((acc, obj) => deepMergeUi(acc, obj), {});
 }
 
+// Merge especial para arquivos de textura (une texture_data)
+function mergeTextureJsonFiles(files: AddonFile[]): any {
+  const merged = files
+    .map(f => JSON.parse(f.content as string))
+    .reduce((acc, obj) => {
+      // Unir texture_data se existir
+      if (obj.texture_data && acc.texture_data) {
+        acc.texture_data = { ...acc.texture_data, ...obj.texture_data };
+      } else if (obj.texture_data) {
+        acc.texture_data = { ...obj.texture_data };
+      }
+      // Unir outros campos normalmente
+      for (const key of Object.keys(obj)) {
+        if (key !== 'texture_data') {
+          acc[key] = deepMerge(acc[key], obj[key]);
+        }
+      }
+      return acc;
+    }, {});
+  return merged;
+}
+
 export const detectConflicts = (addons: LoadedAddon[]): FileConflict[] => {
   const fileMap = new Map<string, Array<{ addonId: string; addonName: string; content: string | Uint8Array }>>();
   
@@ -194,7 +216,18 @@ function mergeManifests(baseManifest: any, addons: LoadedAddon[]): any {
       }
     });
   }
-  if (allDeps.length > 0) mergedManifest.dependencies = allDeps;
+
+  // --- FILTRAR DEPENDÊNCIAS QUE NÃO ESTÃO NOS MÓDULOS ---
+  if (allDeps.length > 0) {
+    const moduleUuids = new Set(
+      (mergedManifest.modules || []).map((mod: any) => mod.uuid)
+    );
+    mergedManifest.dependencies = allDeps.filter(dep => moduleUuids.has(dep.uuid));
+    // Se não sobrar nenhuma dependência válida, remova o campo
+    if (mergedManifest.dependencies.length === 0) {
+      delete mergedManifest.dependencies;
+    }
+  }
 
   return mergedManifest;
 }
@@ -352,23 +385,83 @@ export const mergeAddons = (
       const conflict = conflictMap.get(file.path);
 
       if (conflict) {
-        // Unifica o conteúdo dos arquivos conflitantes se possível
-        const allFiles = conflict.addons.map((a, idx) => {
-          const addonObj = addons.find(ad => ad.id === a.addonId);
-          const fileObj = addonObj?.files.find(f => f.path === conflict.path);
-          return fileObj
-            ? { content: fileObj.content, isText: fileObj.isText }
-            : { content: a.content, isText: true };
-        });
-        const mergedContent = mergeFileContents(file.path, allFiles);
+        // --- MERGE ESPECIAL PARA blocks.json ---
+        if (file.path.endsWith('blocks.json')) {
+          const allFiles = conflict.addons.map((a) => {
+            const addonObj = addons.find(ad => ad.id === a.addonId);
+            const fileObj = addonObj?.files.find(f => f.path === conflict.path);
+            return fileObj
+              ? { content: fileObj.content, isText: fileObj.isText }
+              : { content: a.content, isText: true };
+          });
+          const mergedContent = JSON.stringify(mergeBlocksJson(allFiles), null, 2);
+          mergedFiles.push({
+            path: file.path,
+            content: mergedContent,
+            isText: file.isText
+          });
+          logs.push(`Conflict merged for ${file.path}: unified content from ${conflict.addons.length} addons (blocks.json special merge)`);
+        }
+        // --- MERGE ESPECIAL PARA arquivos de textura ---
+        else if (
+          (file.path === 'textures/item_texture.json' || file.path === 'textures/terrain_texture.json')
+        ) {
+          const allFiles = conflict.addons.map((a) => {
+            const addonObj = addons.find(ad => ad.id === a.addonId);
+            const fileObj = addonObj?.files.find(f => f.path === conflict.path);
+            return fileObj
+              ? fileObj
+              : { content: a.content, isText: true, path: file.path };
+          });
+          const mergedTexture = mergeTextureJsonFiles(allFiles);
+          mergedFiles.push({
+            path: file.path,
+            content: JSON.stringify(mergedTexture, null, 2),
+            isText: true
+          });
+          logs.push(`Conflict merged for ${file.path}: unified texture_data from ${conflict.addons.length} addons`);
+        }
+        // --- MERGE ESPECIAL PARA UI JSONs ---
+        else if (
+          file.path.startsWith('ui/') &&
+          file.path.endsWith('.json') &&
+          !file.path.endsWith('_ui_defs.json')
+        ) {
+          const allFiles = conflict.addons.map((a) => {
+            const addonObj = addons.find(ad => ad.id === a.addonId);
+            const fileObj = addonObj?.files.find(f => f.path === conflict.path);
+            return fileObj
+              ? fileObj
+              : { content: a.content, isText: true, path: file.path };
+          });
+          const mergedUi = mergeUiJsonFiles(allFiles);
+          mergedFiles.push({
+            path: file.path,
+            content: JSON.stringify(mergedUi, null, 2),
+            isText: true
+          });
+          logs.push(`Conflict merged for ${file.path}: unified content from ${conflict.addons.length} addons (UI special merge)`);
+        }
+        // --- MERGE PADRÃO ---
+        else {
+          // Para qualquer outro arquivo, sempre faz merge de todos os conteúdos
+          const allFiles = conflict.addons.map((a) => {
+            const addonObj = addons.find(ad => ad.id === a.addonId);
+            const fileObj = addonObj?.files.find(f => f.path === conflict.path);
+            return fileObj
+              ? { content: fileObj.content, isText: fileObj.isText }
+              : { content: a.content, isText: true };
+          });
+          const mergedContent = mergeFileContents(file.path, allFiles);
 
-        mergedFiles.push({
-          path: file.path,
-          content: mergedContent,
-          isText: file.isText
-        });
+          mergedFiles.push({
+            path: file.path,
+            content: mergedContent,
+            isText: file.isText
+          });
 
-        logs.push(`Conflict merged for ${file.path}: unified content from ${conflict.addons.length} addons`);
+          logs.push(`Conflict merged for ${file.path}: unified content from ${conflict.addons.length} addons`);
+        }
       } else {
         // No conflict, add file as-is
         mergedFiles.push(file);
@@ -398,6 +491,23 @@ export const mergeAddons = (
     });
   });
 
+  // Inclua todos os arquivos de materiais e modelos de todos os addons, sem sobrescrever
+  addons.forEach((addon) => {
+    addon.files.forEach((file) => {
+      if (
+        (file.path.startsWith('materials/') ||
+         file.path.startsWith('models/') ||
+         file.path.startsWith('materials\\') ||
+         file.path.startsWith('models\\')) &&
+        !mergedFiles.some(f => f.path === file.path) &&
+        !processedPaths.has(file.path)
+      ) {
+        mergedFiles.push(file);
+        logs.push(`Included material/model ${file.path} from ${addon.name}`);
+      }
+    });
+  });
+
   // Antes de adicionar o manifest, faça merge dos manifests dos addons
   const finalManifest = mergeManifests(mergedManifest, addons);
 
@@ -419,29 +529,43 @@ export const mergeAddons = (
   };
 };
 
-// Ao mesclar arquivos, garanta que todos os assets (ex: textures/*.png) de todos os addons sejam incluídos
-function mergeAssets(addons: LoadedAddon[]): MergedAsset[] {
-  const assetMap: Record<string, MergedAsset> = {};
-
-  for (const addon of addons) {
-    for (const file of addon.files) {
-      // Inclua todos os arquivos de asset (ex: textures, sounds, etc)
-      if (
-        file.path.startsWith('textures/') ||
-        file.path.startsWith('textures\\') ||
-        file.path.startsWith('sounds/') ||
-        file.path.startsWith('sounds\\')
-      ) {
-        // Se já existe um asset com esse nome, pode renomear ou sobrescrever, ou adicionar lógica de conflito
-        if (!assetMap[file.path]) {
-          assetMap[file.path] = file;
+// No merge de blocks.json, una os objetos, mas evite sobrescrever componentes de geometria de blocos customizados
+function mergeBlocksJson(files: AddonFile[]): any {
+  // Merge profundo, mas nunca sobrescreva "minecraft:geometry" de blocos customizados
+  // E remova propriedades legadas se geometry estiver presente
+  const merged = files
+    .map(f => JSON.parse(f.content as string))
+    .reduce((acc, obj) => {
+      for (const key in obj) {
+        if (!acc[key]) {
+          acc[key] = obj[key];
+        } else {
+          // Se ambos têm geometry, mantém a primeira geometry encontrada
+          if (
+            obj[key].components &&
+            obj[key].components["minecraft:geometry"] &&
+            acc[key].components &&
+            acc[key].components["minecraft:geometry"]
+          ) {
+            acc[key] = { ...deepMerge(acc[key], obj[key]) };
+            acc[key].components["minecraft:geometry"] = acc[key].components["minecraft:geometry"];
+          } else {
+            acc[key] = deepMerge(acc[key], obj[key]);
+          }
         }
-        // Se quiser tratar conflitos de assets, adicione lógica aqui
+        // --- Remover propriedades legadas se geometry presente ---
+        if (
+          acc[key].components &&
+          acc[key].components["minecraft:geometry"]
+        ) {
+          delete acc[key].components["minecraft:block_shape"];
+          delete acc[key].components["minecraft:legacy_block"];
+          delete acc[key].components["minecraft:material_instances"];
+        }
       }
-    }
-  }
-
-  return Object.values(assetMap);
+      return acc;
+    }, {});
+  return merged;
 }
 
 // No processo de merge, chame mergeAssets e inclua os arquivos no resultado final

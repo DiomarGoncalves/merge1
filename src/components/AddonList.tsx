@@ -80,9 +80,9 @@ export const AddonList: React.FC<AddonListProps> = ({ addons, onRemoveAddon }) =
                   <span>{addon.files.length} files</span>
                 </div>
                 <div>Original file: {addon.originalFileName}</div>
-                {addon.manifest && (
+                {addon.manifest && addon.manifest.header && Array.isArray(addon.manifest.header.version) ? (
                   <div>Version: {addon.manifest.header.version.join('.')}</div>
-                )}
+                ) : null}
               </div>
             </div>
             
